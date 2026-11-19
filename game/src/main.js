@@ -21,8 +21,9 @@ const saved=loadSave();
 const player=createPlayer(); player.health=100; player.ammo=18; player.hasWeapon=false;
 
 function particleSystem(){return {items:[],burst(x,y,color,count){for(let i=0;i<count;i++){const angle=random()*Math.PI*2,speed=25+random()*110;this.items.push({x,y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,size:2+random()*4,color,life:.25+random()*.55});}},step(dt){for(const item of this.items){item.x+=item.vx*dt;item.y+=item.vy*dt;item.life-=dt;}this.items=this.items.filter(item=>item.life>0);}};}
-const state={player,cars:createTraffic(random),peds:createPedestrians(random),wanted:null,missions:createMissions(saved.mission),cash:saved.cash,packages:[],packagesFound:saved.packages||0,safehouse:!!saved.safehouse,bestCar:!!saved.bestCar,skids:[],roadblocks:[],particles:particleSystem(),shake:0,clock:17*60+12,screen:'title',taxiActive:false,taxiTarget:null,weapon:{x:1425,y:1055,taken:false},audio,save:()=>storeSave(state)};
+const state={player,cars:createTraffic(random),peds:createPedestrians(random),wanted:null,missions:createMissions(saved.mission),cash:saved.cash,packages:[],packagesFound:saved.packages||0,safehouse:!!saved.safehouse,bestCar:!!saved.bestCar,hasContinue:saved.cash!==450||saved.mission>0,menuIndex:saved.cash!==450||saved.mission>0?1:0,skids:[],roadblocks:[],particles:particleSystem(),shake:0,clock:17*60+12,screen:'title',taxiActive:false,taxiTarget:null,unlockNotice:'',unlockNoticeTimer:0,weapon:{x:1425,y:1055,taken:false},audio,save:()=>storeSave(state)};
 state.wanted=createWanted(state);
+if(saved.mission===2){state.wanted.heat=60;state.wanted.level=3;state.wanted.sight=7;}
 for(const car of state.cars){car.x=Math.round(car.x);car.y=Math.round(car.y);}
 state.cars.unshift({id:'starter-sedan',type:'sedan',color:'#d8d2b9',x:1365,y:1080,angle:0,speed:0,player:false,occupied:false});
 for(const [x,y] of [[620,420],[2360,910],[1180,1630],[1810,430],[940,1120],[2650,1280]])state.packages.push({x,y,taken:false});
@@ -56,11 +57,30 @@ function shoot(){
 }
 function hitRival(){const target=state.peds.find(p=>p.rival&&p.alive&&Math.hypot(p.x-state.player.x,p.y-state.player.y)<48);if(target){target.hp=(target.hp||2)-1;state.audio.play('punch');state.particles.burst(target.x,target.y,'#ce7656',5);if(target.hp<=0)target.alive=false;}else punchNearby(state);}
 function respawn(reason){screen=reason;state.screen=reason;state.player.health=0;state.player.car=null;state.cash=Math.max(0,state.cash-350);state.wanted.heat=0;state.wanted.level=0;state.cars=state.cars.filter(car=>!car.police);state.player.x=1260;state.player.y=1160;state.player.health=100;state.player.ammo=Math.max(0,state.player.ammo);state.player.invulnerable=2;state.save();}
+function checkUnlocks(){
+  if(!state.safehouse&&state.cash>=1200){state.safehouse=true;state.unlockNotice='PALMA COURT SAFEHOUSE UNLOCKED';state.unlockNoticeTimer=6;state.save();}
+  if(!state.bestCar&&state.cash>=2500){
+    state.bestCar=true;improveTraffic(state);
+    state.cars.push({id:'garage-sport-a',type:'sport',color:'#d95443',x:375,y:205,angle:Math.PI/2,speed:0,player:false,occupied:false});
+    state.cars.push({id:'garage-sport-b',type:'sport',color:'#67a9a1',x:625,y:205,angle:Math.PI/2,speed:0,player:false,occupied:false});
+    state.unlockNotice='GLASS MILE SPORTS ADDED TO TRAFFIC';state.unlockNoticeTimer=6;state.save();
+  }
+}
 function act(){
+  if(screen==='title'){
+    if(input.hit('ArrowUp','KeyW'))state.menuIndex=0;
+    if(input.hit('ArrowDown','KeyS'))state.menuIndex=1;
+    const confirm=input.hit('Enter')||input.clicked();
+    if(confirm&&!(state.menuIndex===1&&!state.hasContinue)){
+      audio.unlock();
+      if(state.menuIndex===0){state.cash=450;state.packagesFound=0;state.missions=createMissions(0);state.hasContinue=false;state.player.health=100;state.player.ammo=18;state.player.hasWeapon=false;}
+      state.player.x=1420;state.player.y=1080;state.missions.active=true;state.screen=screen='play';
+    }
+    return;
+  }
   if(input.hit('Enter')){
     audio.unlock();
-    if(screen==='title'){state.screen=screen='play';state.player.x=1420;state.player.y=1080;state.missions.active=true;}
-    else if(screen==='mission-complete'){nextMission(state);screen=state.screen='play';}
+    if(screen==='mission-complete'){nextMission(state);screen=state.screen='play';}
     else if(screen==='mission-failed'){restartMission(state);screen=state.screen='play';}
     else if(screen==='busted'||screen==='wasted'){screen=state.screen='play';state.player.health=100;state.player.x=1260;state.player.y=1160;state.player.invulnerable=1.5;}
     else if(screen==='play'&&state.missions.complete){screen=state.screen='mission-complete';}
@@ -71,7 +91,7 @@ function act(){
   if(input.hit('KeyF')){hitRival();}
   if(input.hit('KeyT'))doSideWork(state);
   if(input.hit('KeyG')&&clearWanted(state))missionToast=1.5;
-  if(input.hit('KeyQ')&&Math.hypot(state.player.x-SAFEHOUSE.x,state.player.y-SAFEHOUSE.y)<110){state.safehouse=true;state.cash=Math.max(0,state.cash-300);state.save();missionToast=2;}
+  if(input.hit('KeyQ')&&state.safehouse&&Math.hypot(state.player.x-SAFEHOUSE.x,state.player.y-SAFEHOUSE.y)<110&&state.cash>=150){state.cash-=150;state.player.health=100;state.player.ammo=18;state.player.hasWeapon=true;state.save();missionToast=2;state.unlockNotice='PALMA COURT GARAGE / SERVICE PAID';state.unlockNoticeTimer=3;}
   if(input.firing())shoot();
   if(state.player.car && state.player.car.type==='taxi' && input.hit('KeyH'))doSideWork(state);
 }
@@ -82,14 +102,14 @@ function step(dt){
   if(state.wanted.level>0){audio.siren(true);if(state.player.car&&state.cars.some(car=>car.police&&Math.hypot(car.x-state.player.x,car.y-state.player.y)<38)){state.player.car.speed*=.75;state.shake=8;state.wanted.raise(.12);}}
   else audio.siren(false);
   state.particles.step(dt);state.shake=Math.max(0,state.shake-dt*19);missionToast=Math.max(0,missionToast-dt);
-  if(state.taxiActive&&state.taxiTarget&&Math.hypot(state.player.x-state.taxiTarget.x,state.player.y-state.taxiTarget.y)<100){state.cash+=350;state.taxiActive=false;state.taxiTarget=null;audio.play('mission');}
+  if(state.taxiActive&&state.taxiTarget&&Math.hypot(state.player.x-state.taxiTarget.x,state.player.y-state.taxiTarget.y)<100){state.cash+=350;state.taxiActive=false;state.taxiTarget=null;audio.play('mission');state.save();}
   if(!state.weapon.taken&&Math.hypot(state.player.x-state.weapon.x,state.player.y-state.weapon.y)<25){state.weapon.taken=true;state.player.hasWeapon=true;state.player.ammo=18;audio.play('pickup');}
   updateMissions(state,dt);state.player.cash=state.cash;
+  checkUnlocks();state.unlockNoticeTimer=Math.max(0,state.unlockNoticeTimer-dt);
   if(state.missions.complete)screen=state.screen='mission-complete';
   if(state.missions.failed)screen=state.screen='mission-failed';
   if(state.player.caught){state.player.caught=false;respawn('busted');}
   if(state.player.health<=0)respawn('wasted');
-  if(state.cash>=3500&&!state.bestCar){state.bestCar=true;improveTraffic(state);state.save();}
 }
 function frame(now){requestAnimationFrame(frame);const dt=Math.min(MAX_FRAME,Math.max(0,(now-last)/1000));last=now;act();acc+=dt;if(screen==='play'){while(acc>=STEP){step(STEP);acc-=STEP;}}else acc=0;renderer.draw(state,screen);input.finish();}
 

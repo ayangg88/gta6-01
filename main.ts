@@ -6,7 +6,7 @@
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
@@ -16,6 +16,16 @@ const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
 if (!existsSync(join(here, 'game', 'index.html'))) throw new Error('SOLMAR HEAT requires game/index.html');
 if (!existsSync(join(here, 'screenshots'))) throw new Error('SOLMAR HEAT requires its screenshot set');
+const shotList = JSON.parse(readFileSync(join(here, 'shots.json'), 'utf8'));
+const requiredShots = [
+  ['1-cover.png', '?shot=chase&seed=614'],
+  ['2-street.png', '?shot=street&seed=614'],
+  ['3-mission.png', '?shot=mission&seed=614'],
+  ['4-start.png', '?shot=start&seed=614'],
+];
+if (!Array.isArray(shotList) || shotList.length !== requiredShots.length || requiredShots.some(([name, query], index) => shotList[index]?.name !== name || shotList[index]?.query !== query)) {
+  throw new Error('SOLMAR HEAT screenshot manifest does not match its staged scenes');
+}
 
 mkdirSync(out, { recursive: true });
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });

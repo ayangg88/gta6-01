@@ -50,6 +50,7 @@ export function createHud(ctx,roundRect,text){
     }
     if(state.taxiActive)text('FARE  /  FOLLOW THE GOLD MARKER',640,133,12,'#f1d16e',800,'center');
     if(state.wanted.level>=4)text('ROADBLOCKS AHEAD',640,176,11,'#ef7761',800,'center');
+    if(state.unlockNoticeTimer>0)text(state.unlockNotice,640,206,12,'#f3d16a',800,'center');
   }
 
   function panel(title,subtitle,items=[]){
@@ -60,7 +61,7 @@ export function createHud(ctx,roundRect,text){
     text('SOLMAR  /  COASTAL COUNTY',640,128,13,'#a95b49',800,'center');
     text(title,640,231,60,'#1d3436',900,'center');
     text(subtitle,640,282,17,'#56625a',600,'center');
-    for(let index=0;index<items.length;index++)text(items[index],640,440+index*33,15,'#f0e7ce',600,'center');
+    for(let index=0;index<items.length;index++)text(items[index],640,440+index*33,15,'#f0e7ce',index===0?700:600,'center');
   }
 
   return {map,bars,panel};

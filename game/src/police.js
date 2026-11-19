@@ -35,5 +35,5 @@ export function updatePolice(state, dt, random) {
 export function clearWanted(state) {
   if (Math.hypot(state.player.x - 2710, state.player.y - 1520) > 110 || state.cash < 180) return false;
   state.cash -= 180; state.player.cash = state.cash; state.wanted.heat = 0; state.wanted.level = 0; state.wanted.sight = 0;
-  state.cars = state.cars.filter(car => !car.police); state.audio.play('pickup'); return true;
+  state.cars = state.cars.filter(car => !car.police); state.audio.play('pickup'); state.save(); return true;
 }

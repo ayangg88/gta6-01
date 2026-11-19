@@ -64,7 +64,20 @@ export function createRenderer(canvas) {
     const p=state.player;camera.x=Math.max(0,Math.min(WORLD.width-W,(p.x-W/2)));camera.y=Math.max(0,Math.min(WORLD.height-H,(p.y-H/2)));
     if(state.shake>0){camera.x+=(Math.random()-.5)*state.shake;camera.y+=(Math.random()-.5)*state.shake;}
     ctx.clearRect(0,0,W,H);
-    if(screen==='title'){worldBackground(state);ctx.save();ctx.translate(-camera.x,-camera.y);for(const car of state.cars.slice(0,10))drawCar(car);for(const ped of state.peds.slice(0,12))drawPerson(ped,state);ctx.restore();hud.panel('SOLMAR HEAT','A coastal city remembers every favor.',['ENTER  /  NEW SHIFT','CONTINUE  /  LOAD SAVED RUN','WASD MOVE  •  SHIFT RUN  •  E ENTER  •  F FIGHT']);return;}
+    if(screen==='title'){
+      worldBackground(state);ctx.save();ctx.translate(-camera.x,-camera.y);
+      for(const car of state.cars.slice(0,10))drawCar(car);
+      for(const ped of state.peds.slice(0,12))drawPerson(ped,state);
+      ctx.restore();
+      const newLabel=state.menuIndex===0?'▶  NEW SHIFT':'NEW SHIFT';
+      const continueLabel=state.menuIndex===1?'▶  CONTINUE':'CONTINUE';
+      hud.panel('SOLMAR HEAT','A coastal city remembers every favor.',[
+        newLabel,
+        state.hasContinue?continueLabel:'CONTINUE  /  NO SAVED RUN',
+        'UP / DOWN SELECT  •  ENTER OR CLICK CONFIRM',
+      ]);
+      return;
+    }
     drawWorld(state);hud.bars(state);hud.map(state);
     if(screen==='paused')hud.panel('SHIFT PAUSED','The city keeps its place.',['ESC OR P  /  RETURN TO THE STREET','ENTER  /  CONTINUE']);
     else if(screen==='mission-complete')hud.panel('JOB CLEARED',state.missions.current?.title||'LAST LIGHT',['PAYMENT CLEARED  •  ENTER TO CONTINUE']);

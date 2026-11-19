@@ -42,7 +42,7 @@ export function updateMissions(state, dt) {
     else if (mission.stage===1 && near(state.player,task.target,80)) { mission.stage=2; mission.current.text='Get the ledger to the beach rendezvous.'; mission.current.target={x:1280,y:1810}; state.cash += 900; state.particles.burst(state.player.x,state.player.y,'#edc957',22); }
     else if (mission.stage===2 && near(state.player.car||state.player,task.target,110)) finish(state);
   }
-  for (const pack of state.packages) if (!pack.taken && near(state.player,pack,27)) { pack.taken=true; state.cash+=250; state.packagesFound++; state.audio.play('pickup'); state.particles.burst(pack.x,pack.y,'#f5d85a',10); if (task.kind==='packages') mission.progress++; }
+  for (const pack of state.packages) if (!pack.taken && near(state.player,pack,27)) { pack.taken=true; state.cash+=250; state.packagesFound++; state.audio.play('pickup'); state.particles.burst(pack.x,pack.y,'#f5d85a',10); state.save(); if (task.kind==='packages') mission.progress++; }
 }
 
 function finish(state) {
@@ -63,7 +63,7 @@ export function restartMission(state) {
 }
 
 export function doSideWork(state) {
-  if (state.taxiActive) { state.taxiActive=false; state.cash += 350; state.audio.play('mission'); return true; }
+  if (state.taxiActive) return false;
   if (state.player.car?.type==='taxi') { state.taxiActive=true; state.taxiTarget={x:520,y:300}; return true; }
   return false;
 }
