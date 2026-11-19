@@ -1,134 +1,98 @@
-// Boot and the one loop: input is read every frame, the world advances in fixed 1/60 s steps
-// (several in a slow frame, none in a fast one), and the renderer paints what is there. The game
-// moves between four screens: title, play, paused and game over.
-//
-// ?seed=N fixes the falling pattern. ?shot=start|play|end (with &seed=N) stages that scene
-// instead of running the loop, paints it twice and sets window.__shotReady for a screenshot.
-import { BEST_KEY, LIVES, STEP } from './config.js';
-import { createRandom } from './random.js';
-import { createWorld, EVENT_HIT, EVENT_OVER } from './world.js';
-import { ACTION_CONFIRM, ACTION_PAUSE, createInput } from './input.js';
-import { createRenderer, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
-import { stageShot } from './shots.js';
+// SOLMAR HEAT boots a deterministic coastal sandbox and advances its systems at a fixed frame cap.
+import { seededRandom } from './random.js';
+import { createInput } from './input.js';
+import { createPlayer, movePlayer, damagePlayer } from './player.js';
+import { createTraffic, enterNearestCar, exitCar, updateCars, improveTraffic } from './vehicles.js';
+import { createPedestrians, updatePedestrians, punchNearby } from './pedestrians.js';
+import { createWanted, updatePolice, clearWanted } from './police.js';
+import { createMissions, updateMissions, nextMission, restartMission, doSideWork } from './missions.js';
+import { createAudio } from './audio.js';
+import { createRenderer } from './render.js';
+import { loadSave, storeSave } from './save.js';
+import { DISTRICTS, GARAGE, SAFEHOUSE, WORLD } from './city.js';
 
-/** The longest frame the loop catches up on; a longer stall (a hidden tab) is dropped, not replayed. */
-const MAX_FRAME = 0.25;
+const STEP=1/60, MAX_FRAME=.08;
+const canvas=document.getElementById('game'), status=document.getElementById('status');
+const params=new URLSearchParams(location.search);
+const seedValue=Number.parseInt(params.get('seed')||'614',10);
+const random=seededRandom(Number.isInteger(seedValue)?seedValue:614);
+const input=createInput(canvas), renderer=createRenderer(canvas), audio=createAudio();
+const saved=loadSave();
+const player=createPlayer(); player.health=100; player.ammo=18; player.hasWeapon=false;
 
-const params = new URLSearchParams(window.location.search);
-const shot = params.get('shot');
-const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
-const seed = Number.isInteger(seedParam) ? seedParam : Math.floor(Math.random() * 4294967296);
+function particleSystem(){return {items:[],burst(x,y,color,count){for(let i=0;i<count;i++){const angle=random()*Math.PI*2,speed=25+random()*110;this.items.push({x,y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,size:2+random()*4,color,life:.25+random()*.55});}},step(dt){for(const item of this.items){item.x+=item.vx*dt;item.y+=item.vy*dt;item.life-=dt;}this.items=this.items.filter(item=>item.life>0);}};}
+const state={player,cars:createTraffic(random),peds:createPedestrians(random),wanted:null,missions:createMissions(saved.mission),cash:saved.cash,packages:[],packagesFound:saved.packages||0,safehouse:!!saved.safehouse,bestCar:!!saved.bestCar,skids:[],roadblocks:[],particles:particleSystem(),shake:0,clock:17*60+12,screen:'title',taxiActive:false,taxiTarget:null,weapon:{x:1425,y:1055,taken:false},audio,save:()=>storeSave(state)};
+state.wanted=createWanted(state);
+for(const car of state.cars){car.x=Math.round(car.x);car.y=Math.round(car.y);}
+state.cars.unshift({id:'starter-sedan',type:'sedan',color:'#d8d2b9',x:1365,y:1080,angle:0,speed:0,player:false,occupied:false});
+for(const [x,y] of [[620,420],[2360,910],[1180,1630],[1810,430],[940,1120],[2650,1280]])state.packages.push({x,y,taken:false});
+improveTraffic(state);
+const shot=params.get('shot');
+let screen='title', acc=0,last=performance.now(), missionToast=0, endHandled=false;
 
-const canvas = document.getElementById('game');
-const status = document.getElementById('status');
-const world = createWorld(createRandom(seed));
-const renderer = createRenderer(canvas);
-
-function readBest() {
-  try {
-    return Number.parseInt(window.localStorage.getItem(BEST_KEY) ?? '0', 10) || 0;
-  } catch {
-    return 0;
+function stage(name){
+  state.screen='play'; screen='play'; state.player.x=1420;state.player.y=1080;state.player.car=null;state.cash=1840;state.player.ammo=14;state.player.health=86;
+  state.district=districtName(state.player.x,state.player.y);
+  state.missions=createMissions(name==='mission'?1:0);state.missions.active=true;
+  if(name==='mission'){state.player.x=1630;state.player.y=1060;state.player.car=state.cars.find(car=>car.type==='sport')||null;if(!state.player.car){const c={id:901,type:'sport',color:'#d95443',x:1630,y:1060,angle:0,speed:118,player:true,occupied:true};state.cars.push(c);state.player.car=c;}state.player.car.x=1630;state.player.car.y=1060;state.player.car.angle=.05;state.player.car.speed=118;state.wanted.heat=20;state.wanted.level=1;state.missions.timer=48;}
+  if(name==='chase'){
+    state.player.x=1910;state.player.y=1130;state.player.car={id:902,type:'sport',color:'#d95443',x:1910,y:1130,angle:0.02,speed:176,player:true,occupied:true};state.cars.push(state.player.car);
+    state.wanted.heat=58;state.wanted.level=3;state.wanted.sight=7;
+    for(const cop of [{x:1650,y:1138,angle:0},{x:1510,y:1070,angle:.12},{x:1700,y:1250,angle:-.2}])state.cars.push({...cop,id:`shot-cop-${state.cars.length}`,type:'police',color:'#e7e5dc',speed:139,player:false,occupied:false,police:true});
+    state.missions=createMissions(2);state.missions.active=true;
   }
+  if(name==='street'){state.player.x=1430;state.player.y=1050;state.wanted.heat=0;state.wanted.level=0;}
+  if(name==='start'){screen='title';state.screen='title';}
+  renderer.draw(state,screen);window.__shotReady=true;
 }
 
-function saveBest(value) {
-  try {
-    window.localStorage.setItem(BEST_KEY, String(value));
-  } catch {
-    // Storage can be off (private windows): the best score then lasts this visit only.
-  }
+function districtName(x,y){return DISTRICTS.find(d=>x>=d.x&&x<d.x+d.w&&y>=d.y&&y<d.y+d.h)?.name||'SOLMAR';}
+function nearestPed(){return state.peds.find(p=>p.alive&&!p.officer&&Math.hypot(p.x-state.player.x,p.y-state.player.y)<410);}
+function shoot(){
+  if(!state.player.hasWeapon||state.player.ammo<=0)return;
+  state.player.ammo--;audio.play('shot');state.shake=Math.max(state.shake,3);state.wanted.raise(1);
+  const target=nearestPed();
+  if(target){target.hp=(target.hp||1)-1;if(target.hp<=0){target.alive=false;state.cash+=35;state.particles.burst(target.x,target.y,'#db8a63',8);}}
 }
-
-function runShot(name) {
-  const scene = stageShot(name, world);
-  let painted = 0;
-  function paint() {
-    renderer.draw(world.state, scene.screen, scene.best);
-    painted += 1;
-    if (painted < 2) requestAnimationFrame(paint);
-    else window.__shotReady = true;
+function hitRival(){const target=state.peds.find(p=>p.rival&&p.alive&&Math.hypot(p.x-state.player.x,p.y-state.player.y)<48);if(target){target.hp=(target.hp||2)-1;state.audio.play('punch');state.particles.burst(target.x,target.y,'#ce7656',5);if(target.hp<=0)target.alive=false;}else punchNearby(state);}
+function respawn(reason){screen=reason;state.screen=reason;state.player.health=0;state.player.car=null;state.cash=Math.max(0,state.cash-350);state.wanted.heat=0;state.wanted.level=0;state.cars=state.cars.filter(car=>!car.police);state.player.x=1260;state.player.y=1160;state.player.health=100;state.player.ammo=Math.max(0,state.player.ammo);state.player.invulnerable=2;state.save();}
+function act(){
+  if(input.hit('Enter')){
+    audio.unlock();
+    if(screen==='title'){state.screen=screen='play';state.player.x=1420;state.player.y=1080;state.missions.active=true;}
+    else if(screen==='mission-complete'){nextMission(state);screen=state.screen='play';}
+    else if(screen==='mission-failed'){restartMission(state);screen=state.screen='play';}
+    else if(screen==='busted'||screen==='wasted'){screen=state.screen='play';state.player.health=100;state.player.x=1260;state.player.y=1160;state.player.invulnerable=1.5;}
+    else if(screen==='play'&&state.missions.complete){screen=state.screen='mission-complete';}
   }
-  requestAnimationFrame(paint);
+  if(input.hit('Escape','KeyP'))screen=state.screen=screen==='paused'?'play':screen==='play'?'paused':screen;
+  if(screen!=='play')return;
+  if(input.hit('KeyE')){if(state.player.car)exitCar(state);else enterNearestCar(state);}
+  if(input.hit('KeyF')){hitRival();}
+  if(input.hit('KeyT'))doSideWork(state);
+  if(input.hit('KeyG')&&clearWanted(state))missionToast=1.5;
+  if(input.hit('KeyQ')&&Math.hypot(state.player.x-SAFEHOUSE.x,state.player.y-SAFEHOUSE.y)<110){state.safehouse=true;state.cash=Math.max(0,state.cash-300);state.save();missionToast=2;}
+  if(input.firing())shoot();
+  if(state.player.car && state.player.car.type==='taxi' && input.hit('KeyH'))doSideWork(state);
 }
-
-function runGame() {
-  const input = createInput(canvas);
-  let screen = SCREEN_TITLE;
-  let best = readBest();
-  let accumulator = 0;
-  let last = performance.now();
-
-  // Screen readers (and anyone watching the page's text) hear the screen changes and each hit.
-  function announce(message) {
-    status.textContent = message;
-  }
-
-  function startGame() {
-    world.reset();
-    accumulator = 0;
-    screen = SCREEN_PLAY;
-    announce(`Playing. ${LIVES} lives.`);
-  }
-
-  function endGame() {
-    screen = SCREEN_OVER;
-    if (world.state.score > best) {
-      best = world.state.score;
-      saveBest(best);
-    }
-    announce(`Game over. Score ${world.state.score}. Best ${best}.`);
-  }
-
-  function handleActions() {
-    const actions = input.takeActions();
-    if (actions & ACTION_CONFIRM && (screen === SCREEN_TITLE || screen === SCREEN_OVER)) startGame();
-    else if (actions & ACTION_PAUSE && screen === SCREEN_PLAY) {
-      screen = SCREEN_PAUSED;
-      announce('Paused.');
-    } else if (actions & (ACTION_PAUSE | ACTION_CONFIRM) && screen === SCREEN_PAUSED) {
-      screen = SCREEN_PLAY;
-      announce('Playing.');
-    }
-  }
-
-  function step() {
-    if (screen === SCREEN_TITLE) {
-      world.step(STEP, 0, true);
-      return;
-    }
-    const events = world.step(STEP, input.direction(), false);
-    if (events & EVENT_OVER) endGame();
-    else if (events & EVENT_HIT) announce(world.state.lives === 1 ? 'Hit. 1 life left.' : `Hit. ${world.state.lives} lives left.`);
-  }
-
-  function frame(now) {
-    requestAnimationFrame(frame);
-    accumulator += Math.min((now - last) / 1000, MAX_FRAME);
-    last = now;
-    handleActions();
-    if (screen === SCREEN_TITLE || screen === SCREEN_PLAY) {
-      while (accumulator >= STEP && (screen === SCREEN_TITLE || screen === SCREEN_PLAY)) {
-        step();
-        accumulator -= STEP;
-      }
-    } else {
-      accumulator = 0;
-    }
-    renderer.draw(world.state, screen, best);
-  }
-
-  // Leaving the tab pauses a running game rather than letting blocks fall unseen.
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && screen === SCREEN_PLAY) {
-      screen = SCREEN_PAUSED;
-      announce('Paused.');
-    }
-  });
-
-  announce('Block Dodger. Press Space or click to start.');
-  requestAnimationFrame(frame);
+function step(dt){
+  if(screen!=='play'){state.clock+=dt;return;}
+  state.clock+=dt;state.district=districtName(state.player.x,state.player.y);
+  movePlayer(state,input,dt);updateCars(state,input,dt);updatePedestrians(state,dt,random);updatePolice(state,dt,random);
+  if(state.wanted.level>0){audio.siren(true);if(state.player.car&&state.cars.some(car=>car.police&&Math.hypot(car.x-state.player.x,car.y-state.player.y)<38)){state.player.car.speed*=.75;state.shake=8;state.wanted.raise(.12);}}
+  else audio.siren(false);
+  state.particles.step(dt);state.shake=Math.max(0,state.shake-dt*19);missionToast=Math.max(0,missionToast-dt);
+  if(state.taxiActive&&state.taxiTarget&&Math.hypot(state.player.x-state.taxiTarget.x,state.player.y-state.taxiTarget.y)<100){state.cash+=350;state.taxiActive=false;state.taxiTarget=null;audio.play('mission');}
+  if(!state.weapon.taken&&Math.hypot(state.player.x-state.weapon.x,state.player.y-state.weapon.y)<25){state.weapon.taken=true;state.player.hasWeapon=true;state.player.ammo=18;audio.play('pickup');}
+  updateMissions(state,dt);state.player.cash=state.cash;
+  if(state.missions.complete)screen=state.screen='mission-complete';
+  if(state.missions.failed)screen=state.screen='mission-failed';
+  if(state.player.caught){state.player.caught=false;respawn('busted');}
+  if(state.player.health<=0)respawn('wasted');
+  if(state.cash>=3500&&!state.bestCar){state.bestCar=true;improveTraffic(state);state.save();}
 }
+function frame(now){requestAnimationFrame(frame);const dt=Math.min(MAX_FRAME,Math.max(0,(now-last)/1000));last=now;act();acc+=dt;if(screen==='play'){while(acc>=STEP){step(STEP);acc-=STEP;}}else acc=0;renderer.draw(state,screen);input.finish();}
 
-if (shot) runShot(shot);
-else runGame();
+if(shot){stage(['start','street','mission','chase'].includes(shot)?shot:'start');}else{state.screen=screen='title';renderer.draw(state,screen);requestAnimationFrame(frame);}
+canvas.addEventListener('pointerdown',()=>audio.unlock(),{once:true});
+status.textContent='SOLMAR HEAT. Enter starts or continues the shift.';
