@@ -48,13 +48,19 @@ export function createRenderer(canvas) {
   }
   function drawPlayer(state){const p=state.player;if(p.car)return;ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.angle);ctx.fillStyle='rgba(12,20,19,.3)';ctx.beginPath();ctx.ellipse(0,6,11,6,0,0,Math.PI*2);ctx.fill();ctx.fillStyle=p.invulnerable>0&&Math.floor(p.invulnerable*12)%2?'#f5cf82':'#d8684e';ctx.beginPath();ctx.arc(0,0,9,0,Math.PI*2);ctx.fill();ctx.fillStyle='#f5d2a5';ctx.beginPath();ctx.arc(3,-5,5,0,Math.PI*2);ctx.fill();if(p.punch>0){ctx.strokeStyle='#f4d16e';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,24,-.8,.8);ctx.stroke();}ctx.restore();}
   function drawPackages(state){for(const pack of state.packages)if(!pack.taken){ctx.fillStyle='#f3d24d';ctx.fillRect(pack.x-8,pack.y-8,16,16);ctx.strokeStyle='#fff3b2';ctx.strokeRect(pack.x-10,pack.y-10,20,20);}}
+  function drawWeapon(state){
+    if(state.weapon.taken)return;
+    ctx.save();ctx.translate(state.weapon.x,state.weapon.y);ctx.rotate(-.42);
+    ctx.fillStyle='rgba(20,27,25,.38)';ctx.fillRect(-8,2,21,5);ctx.fillStyle='#283636';ctx.fillRect(-9,-2,21,5);ctx.fillRect(3,-6,11,3);ctx.fillRect(-5,2,4,5);
+    ctx.fillStyle='#f1cf64';ctx.beginPath();ctx.arc(0,0,15,0,Math.PI*2);ctx.strokeStyle='#f1cf64';ctx.lineWidth=1;ctx.globalAlpha=.65;ctx.stroke();ctx.globalAlpha=1;ctx.restore();
+  }
   function drawWorld(state){
     ctx.save();ctx.translate(-camera.x,-camera.y);worldBackground(state);
     for(const mark of state.skids){ctx.strokeStyle=`rgba(25,29,28,${Math.min(.45,mark.life*.4)})`;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(mark.x,mark.y);ctx.lineTo(mark.x-Math.cos(mark.angle)*20,mark.y-Math.sin(mark.angle)*20);ctx.stroke();}
     for(const ped of state.peds)if(ped.alive)drawPerson(ped,state);
     for(const car of state.cars)drawCar(car);
     for(const block of state.roadblocks||[]){ctx.save();ctx.translate(block.x,block.y);ctx.rotate(block.angle);ctx.fillStyle='#d6c7a0';ctx.fillRect(-38,-7,76,14);ctx.fillStyle='#c95949';for(let stripe=-31;stripe<35;stripe+=18)ctx.fillRect(stripe,-7,8,14);ctx.restore();}
-    drawPackages(state);drawPlayer(state);
+    drawPackages(state);drawWeapon(state);drawPlayer(state);
     for(const particle of state.particles.items){ctx.globalAlpha=Math.max(0,particle.life);ctx.fillStyle=particle.color;ctx.fillRect(particle.x,particle.y,particle.size,particle.size);}
     ctx.globalAlpha=1;
     if(state.wanted.helicopter){const target=state.player.car||state.player;ctx.fillStyle='rgba(255,241,163,.1)';ctx.beginPath();ctx.moveTo(target.x,target.y);ctx.lineTo(target.x-150,target.y-320);ctx.lineTo(target.x+150,target.y-320);ctx.closePath();ctx.fill();ctx.fillStyle='#28393a';ctx.fillRect(target.x-11,target.y-320,22,10);}

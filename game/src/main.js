@@ -18,7 +18,7 @@ const seedValue=Number.parseInt(params.get('seed')||'614',10);
 const random=seededRandom(Number.isInteger(seedValue)?seedValue:614);
 const input=createInput(canvas), renderer=createRenderer(canvas), audio=createAudio();
 const saved=loadSave();
-const player=createPlayer(); player.health=100; player.ammo=18; player.hasWeapon=false;
+const player=createPlayer(); player.health=100; player.ammo=18; player.hasWeapon=false; player.fireCooldown=0;
 
 function particleSystem(){return {items:[],burst(x,y,color,count){for(let i=0;i<count;i++){const angle=random()*Math.PI*2,speed=25+random()*110;this.items.push({x,y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,size:2+random()*4,color,life:.25+random()*.55});}},step(dt){for(const item of this.items){item.x+=item.vx*dt;item.y+=item.vy*dt;item.life-=dt;}this.items=this.items.filter(item=>item.life>0);}};}
 const state={player,cars:createTraffic(random),peds:createPedestrians(random),wanted:null,missions:createMissions(saved.mission),cash:saved.cash,packages:[],packagesFound:saved.packages||0,safehouse:!!saved.safehouse,bestCar:!!saved.bestCar,hasContinue:saved.cash!==450||saved.mission>0,menuIndex:saved.cash!==450||saved.mission>0?1:0,skids:[],roadblocks:[],particles:particleSystem(),shake:0,clock:17*60+12,screen:'title',taxiActive:false,taxiTarget:null,unlockNotice:'',unlockNoticeTimer:0,weapon:{x:1425,y:1055,taken:false},audio,save:()=>storeSave(state)};
@@ -50,8 +50,8 @@ function stage(name){
 function districtName(x,y){return DISTRICTS.find(d=>x>=d.x&&x<d.x+d.w&&y>=d.y&&y<d.y+d.h)?.name||'SOLMAR';}
 function nearestPed(){return state.peds.find(p=>p.alive&&!p.officer&&Math.hypot(p.x-state.player.x,p.y-state.player.y)<410);}
 function shoot(){
-  if(!state.player.hasWeapon||state.player.ammo<=0)return;
-  state.player.ammo--;audio.play('shot');state.shake=Math.max(state.shake,3);state.wanted.raise(1);
+  if(!state.player.hasWeapon||state.player.ammo<=0||state.player.fireCooldown>0)return;
+  state.player.ammo--;state.player.fireCooldown=.24;audio.play('shot');state.shake=Math.max(state.shake,3);state.wanted.raise(1);
   const target=nearestPed();
   if(target){target.hp=(target.hp||1)-1;if(target.hp<=0){target.alive=false;state.cash+=35;state.particles.burst(target.x,target.y,'#db8a63',8);}}
 }
@@ -98,12 +98,13 @@ function act(){
 function step(dt){
   if(screen!=='play'){state.clock+=dt;return;}
   state.clock+=dt;state.district=districtName(state.player.x,state.player.y);
+  state.player.fireCooldown=Math.max(0,state.player.fireCooldown-dt);
   movePlayer(state,input,dt);updateCars(state,input,dt);updatePedestrians(state,dt,random);updatePolice(state,dt,random);
   if(state.wanted.level>0){audio.siren(true);if(state.player.car&&state.cars.some(car=>car.police&&Math.hypot(car.x-state.player.x,car.y-state.player.y)<38)){state.player.car.speed*=.75;state.shake=8;state.wanted.raise(.12);}}
   else audio.siren(false);
   state.particles.step(dt);state.shake=Math.max(0,state.shake-dt*19);missionToast=Math.max(0,missionToast-dt);
   if(state.taxiActive&&state.taxiTarget&&Math.hypot(state.player.x-state.taxiTarget.x,state.player.y-state.taxiTarget.y)<100){state.cash+=350;state.taxiActive=false;state.taxiTarget=null;audio.play('mission');state.save();}
-  if(!state.weapon.taken&&Math.hypot(state.player.x-state.weapon.x,state.player.y-state.weapon.y)<25){state.weapon.taken=true;state.player.hasWeapon=true;state.player.ammo=18;audio.play('pickup');}
+  if(!state.weapon.taken&&Math.hypot(state.player.x-state.weapon.x,state.player.y-state.weapon.y)<31){state.weapon.taken=true;state.player.hasWeapon=true;state.player.ammo=18;audio.play('pickup');}
   updateMissions(state,dt);state.player.cash=state.cash;
   checkUnlocks();state.unlockNoticeTimer=Math.max(0,state.unlockNoticeTimer-dt);
   if(state.missions.complete)screen=state.screen='mission-complete';

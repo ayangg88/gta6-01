@@ -16,7 +16,7 @@ export function createInput(canvas) {
   return {
     down(...codes) { return codes.some(code => held.has(code)); },
     hit(...codes) { return codes.some(code => pressed.has(code)); },
-    firing() { const fire = pointerFire; pointerFire = false; return fire || this.hit('Space'); },
+    firing() { const fire = pointerFire; pointerFire = false; return fire || this.down('Space'); },
     clicked() { const click = pointerClick; pointerClick = false; if (click) pointerFire = false; return click; },
     finish() { pressed.clear(); },
   };
